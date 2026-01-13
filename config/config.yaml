@@ -1,0 +1,471 @@
+# ========================================
+# Enterprise AI Resume Screening Platform
+# Central Configuration File
+# ========================================
+
+# ============ Application Settings ============
+app:
+  name: "Resume AI Platform"
+  version: "1.0.0"
+  description: "Enterprise AI Resume Screening & Talent Fit Intelligence Platform"
+  author: "Your Name"
+
+# ============ Paths Configuration ============
+paths:
+  # Data directories
+  data:
+    raw: "data/raw"
+    processed: "data/processed"
+    features: "data/features"
+    uploads: "data/uploads"
+  
+  # Model directories
+  models:
+    root: "models"
+    trained: "models/trained"
+    sbert_cache: "models/sbert_cache"
+    artifacts: "models/artifacts"
+  
+  # Logs directory
+  logs:
+    root: "logs"
+    app_log: "logs/app.log"
+    api_log: "logs/api.log"
+    error_log: "logs/error.log"
+  
+  # Notebooks directory
+  notebooks: "notebooks"
+  
+  # Reports directory
+  reports:
+    root: "reports"
+    bias_audit: "reports/bias_audit"
+    explanations: "reports/explanations"
+    predictions: "reports/predictions"
+
+# ============ Data Processing ============
+data_processing:
+  # Train/Val/Test Split
+  train_split: 0.7
+  val_split: 0.15
+  test_split: 0.15
+  random_seed: 42
+  
+  # Data cleaning
+  remove_duplicates: true
+  handle_missing: "drop"  # drop, fill, mean, median
+  
+  # Feature engineering
+  normalize_features: true
+  scaling_method: "standard"  # standard, minmax, robust
+
+# ============ NLP Configuration ============
+nlp:
+  # spaCy Settings
+  spacy:
+    model: "en_core_web_sm"
+    batch_size: 50
+    n_process: 1
+  
+  # Resume Parser Settings
+  resume_parser:
+    extract_email: true
+    extract_phone: true
+    extract_skills: true
+    extract_education: true
+    extract_experience: true
+    extract_certifications: true
+    extract_projects: true
+    
+    # Skill extraction
+    skill_keywords_path: "config/skill_keywords.txt"
+    min_skill_confidence: 0.6
+  
+  # JD Parser Settings
+  jd_parser:
+    extract_title: true
+    extract_requirements: true
+    extract_responsibilities: true
+    extract_qualifications: true
+    extract_skills: true
+    
+  # Text Preprocessing
+  preprocessing:
+    lowercase: true
+    remove_punctuation: false
+    remove_stopwords: false
+    lemmatization: true
+    min_word_length: 2
+
+# ============ Similarity Matching ============
+similarity:
+  # Sentence-BERT Configuration
+  sbert:
+    model_name: "all-MiniLM-L6-v2"
+    # Alternatives: "all-mpnet-base-v2", "paraphrase-MiniLM-L6-v2"
+    max_seq_length: 384
+    batch_size: 32
+    normalize_embeddings: true
+  
+  # Similarity Metrics
+  metrics:
+    similarity_metric: "cosine"  # cosine, euclidean, manhattan
+    threshold: 0.5
+  
+  # Batch Processing
+  enable_caching: true
+  cache_size: 1000
+
+# ============ Feature Engineering ============
+features:
+  # Feature List
+  feature_columns:
+    - "skill_match_ratio"
+    - "experience_years"
+    - "education_level"
+    - "similarity_score"
+    - "keyword_density"
+    - "project_count"
+    - "certification_score"
+  
+  # Feature Weights (for composite scoring)
+  weights:
+    skill_match: 0.35
+    experience: 0.25
+    education: 0.15
+    similarity: 0.20
+    other: 0.05
+  
+  # Education Level Encoding
+  education_encoding:
+    "High School": 1
+    "Associate": 2
+    "Bachelor": 3
+    "Master": 4
+    "PhD": 5
+  
+  # Experience Boundaries
+  experience:
+    min_years: 0
+    max_years: 50
+    bins: [0, 2, 5, 10, 20, 50]
+    labels: ["Entry", "Junior", "Mid", "Senior", "Expert"]
+
+# ============ Model Configuration ============
+model:
+  # Model Selection
+  algorithm: "xgboost"  # xgboost, lightgbm, random_forest, logistic
+  
+  # XGBoost Hyperparameters
+  xgboost:
+    n_estimators: 100
+    max_depth: 6
+    learning_rate: 0.1
+    subsample: 0.8
+    colsample_bytree: 0.8
+    min_child_weight: 1
+    gamma: 0
+    reg_alpha: 0
+    reg_lambda: 1
+    random_state: 42
+    n_jobs: -1
+    eval_metric: "logloss"
+  
+  # LightGBM Hyperparameters
+  lightgbm:
+    n_estimators: 100
+    max_depth: 6
+    learning_rate: 0.1
+    num_leaves: 31
+    subsample: 0.8
+    colsample_bytree: 0.8
+    min_child_samples: 20
+    random_state: 42
+    n_jobs: -1
+    metric: "binary_logloss"
+  
+  # Random Forest Hyperparameters
+  random_forest:
+    n_estimators: 100
+    max_depth: 10
+    min_samples_split: 2
+    min_samples_leaf: 1
+    max_features: "sqrt"
+    random_state: 42
+    n_jobs: -1
+  
+  # Training Configuration
+  training:
+    cross_validation:
+      enabled: true
+      n_splits: 5
+      shuffle: true
+    
+    hyperparameter_tuning:
+      enabled: true
+      method: "grid_search"  # grid_search, random_search, optuna
+      n_iter: 20  # for random_search
+      cv: 3
+    
+    early_stopping:
+      enabled: true
+      rounds: 10
+      metric: "auc"
+  
+  # Model Evaluation Metrics
+  evaluation:
+    primary_metric: "roc_auc"
+    metrics:
+      - "accuracy"
+      - "precision"
+      - "recall"
+      - "f1_score"
+      - "roc_auc"
+      - "confusion_matrix"
+  
+  # Prediction Threshold
+  prediction:
+    threshold: 0.5
+    calibrate_probabilities: true
+
+# ============ MLflow Configuration ============
+mlflow:
+  experiment_name: "resume_screening_experiments"
+  run_name_prefix: "run"
+  
+  # Tracking
+  tracking:
+    log_params: true
+    log_metrics: true
+    log_model: true
+    log_artifacts: true
+  
+  # Model Registry
+  registry:
+    model_name: "resume_fit_classifier"
+    stages:
+      - "None"
+      - "Staging"
+      - "Production"
+      - "Archived"
+  
+  # Auto-logging
+  autolog:
+    enabled: true
+    log_models: true
+    log_datasets: true
+
+# ============ Explainability Configuration ============
+explainability:
+  # SHAP Configuration
+  shap:
+    enabled: true
+    sample_size: 100  # Number of samples for SHAP calculation
+    explainer_type: "tree"  # tree, kernel, linear
+    plot_types:
+      - "waterfall"
+      - "force"
+      - "summary"
+      - "bar"
+    save_plots: true
+    plot_format: "png"
+  
+  # LIME Configuration
+  lime:
+    enabled: true
+    num_features: 10
+    num_samples: 1000
+    kernel_width: 0.25
+    save_explanations: true
+  
+  # Feature Importance
+  feature_importance:
+    method: "shap"  # shap, permutation, gini
+    top_n: 10
+
+# ============ Bias Audit Configuration ============
+bias_audit:
+  enabled: true
+  
+  # Sensitive Attributes
+  sensitive_features:
+    - "gender"
+    - "university_tier"
+    - "years_of_experience"
+  
+  # Fairness Metrics
+  metrics:
+    - "demographic_parity"
+    - "equalized_odds"
+    - "equal_opportunity"
+    - "disparate_impact"
+  
+  # Thresholds
+  thresholds:
+    disparate_impact_ratio: 0.8
+    demographic_parity_diff: 0.1
+    equalized_odds_diff: 0.1
+  
+  # Mitigation
+  mitigation:
+    enabled: false
+    method: "reweighting"  # reweighting, threshold_optimization
+  
+  # Reporting
+  generate_reports: true
+  report_format: "pdf"  # pdf, html, json
+
+# ============ API Configuration ============
+api:
+  # Endpoints
+  endpoints:
+    upload_resume: "/api/v1/upload/resume"
+    upload_jd: "/api/v1/upload/jd"
+    predict_single: "/api/v1/predict/single"
+    predict_batch: "/api/v1/predict/batch"
+    explain_shap: "/api/v1/explain/shap"
+    explain_lime: "/api/v1/explain/lime"
+    bias_audit: "/api/v1/audit/bias"
+  
+  # File Upload
+  upload:
+    max_file_size_mb: 10
+    allowed_extensions:
+      - "pdf"
+      - "docx"
+      - "doc"
+      - "txt"
+    virus_scan: false
+  
+  # Rate Limiting
+  rate_limit:
+    enabled: false
+    requests_per_minute: 60
+  
+  # Response Format
+  response:
+    include_metadata: true
+    include_timestamp: true
+
+# ============ Dashboard Configuration ============
+dashboard:
+  # Streamlit Settings
+  title: "Resume AI - Talent Screening Platform"
+  page_icon: "🚀"
+  layout: "wide"
+  initial_sidebar_state: "expanded"
+  
+  # Pages
+  pages:
+    - "Home"
+    - "Upload & Screen"
+    - "Candidate Ranking"
+    - "Explanations"
+    - "Bias Audit"
+    - "Settings"
+  
+  # Visualization
+  charts:
+    theme: "streamlit"  # streamlit, plotly, plotly_dark
+    color_scheme: "blues"
+  
+  # Export Options
+  export:
+    formats:
+      - "csv"
+      - "pdf"
+      - "json"
+
+# ============ Logging Configuration ============
+logging:
+  version: 1
+  
+  # Log Levels
+  level:
+    root: "INFO"
+    app: "INFO"
+    api: "DEBUG"
+    model: "INFO"
+  
+  # Formatters
+  format:
+    detailed: "%(asctime)s - %(name)s - [%(levelname)s] - %(funcName)s:%(lineno)d - %(message)s"
+    simple: "%(levelname)s - %(message)s"
+  
+  # Handlers
+  handlers:
+    console:
+      enabled: true
+      level: "INFO"
+      format: "simple"
+    
+    file:
+      enabled: true
+      level: "DEBUG"
+      format: "detailed"
+      max_bytes: 10485760  # 10MB
+      backup_count: 5
+      filename: "logs/app.log"
+    
+    error_file:
+      enabled: true
+      level: "ERROR"
+      format: "detailed"
+      max_bytes: 10485760
+      backup_count: 3
+      filename: "logs/error.log"
+
+# ============ Testing Configuration ============
+testing:
+  # Unit Tests
+  unit_tests:
+    test_data_path: "tests/data"
+    coverage_threshold: 80
+  
+  # Integration Tests
+  integration_tests:
+    use_test_db: true
+    cleanup_after: true
+  
+  # Performance Tests
+  performance_tests:
+    max_response_time_ms: 500
+    concurrent_users: 10
+
+# ============ Deployment Configuration ============
+deployment:
+  # Environment
+  environment: "development"  # development, staging, production
+  
+  # Docker
+  docker:
+    image_name: "resume-ai"
+    tag: "latest"
+    
+  # Streamlit Cloud
+  streamlit_cloud:
+    enabled: true
+    url: "https://resume-ai-yourname.streamlit.app"
+  
+  # Render.com
+  render:
+    enabled: false
+    api_url: "https://resume-ai-api.onrender.com"
+
+# ============ Monitoring Configuration ============
+monitoring:
+  # Performance Monitoring
+  performance:
+    enabled: false
+    sample_rate: 0.1
+  
+  # Error Tracking
+  error_tracking:
+    enabled: false
+    platform: "sentry"  # sentry, rollbar
+  
+  # Metrics
+  metrics:
+    collect_api_metrics: true
+    collect_model_metrics: true
+    retention_days: 30
