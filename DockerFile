@@ -15,7 +15,7 @@ ENV PYTHONUNBUFFERED=1 \
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies including curl for health checks
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
@@ -34,7 +34,8 @@ RUN pip install --upgrade pip && \
     pip install -r requirements.txt
 
 # Download spaCy model
-RUN python -m spacy download en_core_web_sm
+RUN pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
+
 
 # ============ Stage 3: Application ============
 FROM dependencies as application
@@ -58,7 +59,7 @@ FROM application as final
 # 8501 - Streamlit
 EXPOSE 8000 8501
 
-# Health check
+# Health check (uses curl which we installed)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 

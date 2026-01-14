@@ -1,12 +1,13 @@
 # ========================================
 # Resume AI Platform - Docker Compose
-# Multi-service orchestration
+# Multi-service orchestration with MinIO
 # ========================================
 
 version: '3.8'
 
 services:
-  # ============ PostgreSQL Database ============
+
+  # ===================== PostgreSQL =====================
   postgres:
     image: postgres:15-alpine
     container_name: resume-ai-db
@@ -19,6 +20,8 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Auto-create mlflow database on first startup
+      - ./scripts/init_mlflow_db.sql:/docker-entrypoint-initdb.d/init_mlflow_db.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -28,30 +31,64 @@ services:
       - resume-ai-network
     restart: unless-stopped
 
-  # ============ MLflow Tracking Server ============
+  # ===================== MinIO (S3-compatible storage) =====================
+  minio:
+    image: minio/minio:latest
+    container_name: resume-ai-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-admin123}
+    ports:
+      - "9000:9000"  # API
+      - "9001:9001"  # Console UI
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - resume-ai-network
+    restart: unless-stopped
+
+  # ===================== MLflow Tracking Server =====================
   mlflow:
     image: ghcr.io/mlflow/mlflow:v2.10.2
     container_name: resume-ai-mlflow
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    ports:
+      - "5000:5000"
+    environment:
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-admin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-admin123}
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
     command: >
+      sh -c "
+      pip install psycopg2-binary &&
       mlflow server
       --host 0.0.0.0
       --port 5000
       --backend-store-uri postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD:-postgres}@postgres:5432/mlflow
-      --default-artifact-root /mlflow/artifacts
-    ports:
-      - "5000:5000"
-    volumes:
-      - mlflow_data:/mlflow
-    depends_on:
-      postgres:
-        condition: service_healthy
+      --default-artifact-root s3://mlflow/
+      --serve-artifacts
+      "
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     networks:
       - resume-ai-network
     restart: unless-stopped
-    environment:
-      - MLFLOW_TRACKING_URI=http://mlflow:5000
 
-  # ============ FastAPI Backend ============
+  # ===================== FastAPI Backend =====================
   api:
     build:
       context: .
@@ -68,6 +105,9 @@ services:
     environment:
       - DATABASE_URL=postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD:-postgres}@postgres:5432/${DATABASE_NAME:-resume_ai}
       - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER:-admin}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD:-admin123}
+      - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
       - ENVIRONMENT=development
       - DEBUG=True
     env_file:
@@ -76,7 +116,7 @@ services:
       postgres:
         condition: service_healthy
       mlflow:
-        condition: service_started
+        condition: service_healthy
     networks:
       - resume-ai-network
     restart: unless-stopped
@@ -87,7 +127,7 @@ services:
       retries: 3
       start_period: 40s
 
-  # ============ Streamlit Dashboard ============
+  # ===================== Streamlit Dashboard =====================
   dashboard:
     build:
       context: .
@@ -108,7 +148,8 @@ services:
     env_file:
       - .env
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     networks:
       - resume-ai-network
     restart: unless-stopped
@@ -117,9 +158,9 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
 
-  # ============ PgAdmin (Optional - Database Management) ============
+  # ===================== PgAdmin (Database UI - Optional) =====================
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: resume-ai-pgadmin
@@ -132,24 +173,25 @@ services:
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
       - resume-ai-network
     restart: unless-stopped
     profiles:
-      - tools  # Only start with: docker-compose --profile tools up
+      - tools  # Start with: docker-compose --profile tools up
 
-# ============ Networks ============
+# ===================== Networks =====================
 networks:
   resume-ai-network:
     driver: bridge
     name: resume-ai-network
 
-# ============ Volumes ============
+# ===================== Volumes =====================
 volumes:
   postgres_data:
     name: resume-ai-postgres-data
-  mlflow_data:
-    name: resume-ai-mlflow-data
+  minio_data:
+    name: resume-ai-minio-data
   pgadmin_data:
     name: resume-ai-pgadmin-data
