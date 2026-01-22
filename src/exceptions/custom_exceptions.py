@@ -9,29 +9,28 @@ from typing import Optional
 
 def get_detailed_error_message(error: Exception, error_detail: sys) -> str:
     """
-    Extract detailed error information including file, line, and function.
-    
-    Args:
-        error: The exception object
-        error_detail: sys module for traceback extraction
-        
-    Returns:
-        Formatted error message with location details
+    Safely extract detailed error information including file, line, and function.
+    Works even when no active traceback is present.
     """
-    _, _, exc_tb = error_detail.exc_info()
-    
-    file_name = exc_tb.tb_frame.f_code.co_filename
-    line_number = exc_tb.tb_lineno
-    function_name = exc_tb.tb_frame.f_code.co_name
-    
-    error_message = (
+    exc_type, exc_value, exc_tb = error_detail.exc_info()
+
+    if exc_tb is not None:
+        file_name = exc_tb.tb_frame.f_code.co_filename
+        line_number = exc_tb.tb_lineno
+        function_name = exc_tb.tb_frame.f_code.co_name
+    else:
+        # Fallback when exception is raised manually or outside except block
+        file_name = "unknown"
+        line_number = "unknown"
+        function_name = "unknown"
+
+    return (
         f"Error occurred in module [{file_name}] "
         f"at line [{line_number}] "
         f"in function [{function_name}]: "
         f"{str(error)}"
     )
-    
-    return error_message
+
 
 
 class ResumeAIException(Exception):
