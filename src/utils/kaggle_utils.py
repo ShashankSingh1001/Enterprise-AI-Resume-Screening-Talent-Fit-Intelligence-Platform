@@ -1,292 +1,311 @@
 """
-Kaggle Dataset Download Utilities
-Handles automated download and extraction of Kaggle datasets
+Kaggle Dataset Downloader Utility
+
+This module provides functionality to download datasets from Kaggle using the Kaggle API.
 """
 
 import os
 import sys
 import zipfile
-from pathlib import Path
-from typing import Optional, List, Tuple
 import subprocess
+from pathlib import Path
+from typing import Optional, Tuple
+from dotenv import load_dotenv
 
 from src.logging import get_logger
 from src.exceptions import FileProcessingError
 
 logger = get_logger(__name__)
 
+load_dotenv()
+
 
 class KaggleDownloader:
     """
-    Automates Kaggle dataset download and extraction
+    Handles downloading and extracting datasets from Kaggle.
+    
+    Requires KAGGLE_USERNAME and KAGGLE_KEY environment variables.
     """
     
-    def __init__(self, output_dir: str = 'data/external'):
+    def __init__(self, data_dir: str = "data/external"):
         """
-        Initialize Kaggle downloader
+        Initialize Kaggle downloader.
         
         Args:
-            output_dir: Directory to save downloaded datasets
+            data_dir: Directory to save downloaded datasets
         """
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        self._verify_credentials()
-    
+        self.data_dir = Path(data_dir)
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        
+        self.username = os.getenv("KAGGLE_USERNAME")
+        self.api_key = os.getenv("KAGGLE_KEY")
+        
     def _verify_credentials(self) -> bool:
         """
-        Verify Kaggle API credentials are set
+        Verify Kaggle credentials are available.
         
         Returns:
-            True if credentials found
+            bool: True if credentials exist
             
         Raises:
-            FileProcessingError: If credentials missing
+            FileProcessingError: If credentials are missing
         """
-        username = os.getenv('KAGGLE_USERNAME')
-        key = os.getenv('KAGGLE_KEY')
-        
-        if not username or not key:
-            error_msg = (
-                "Kaggle credentials not found in environment variables.\n"
-                "Please set KAGGLE_USERNAME and KAGGLE_KEY in .env file.\n"
-                "Get credentials from: https://www.kaggle.com/settings -> API"
+        if not self.username or not self.api_key:
+            raise FileProcessingError(
+                "Kaggle credentials not found in .env file. "
+                "Please set KAGGLE_USERNAME and KAGGLE_KEY",
+                sys.exc_info()
             )
-            logger.error(error_msg)
-            raise FileProcessingError(error_msg, error_detail=sys.exc_info())
         
-        os.environ['KAGGLE_USERNAME'] = username
-        os.environ['KAGGLE_KEY'] = key
+        # Set environment variables for subprocess
+        os.environ["KAGGLE_USERNAME"] = self.username
+        os.environ["KAGGLE_KEY"] = self.api_key
         
         logger.info("Kaggle credentials verified")
         return True
     
     def _check_kaggle_cli(self) -> bool:
         """
-        Check if Kaggle CLI is installed
+        Check if Kaggle CLI is installed and accessible.
         
         Returns:
-            True if installed
+            bool: True if CLI is available
         """
         try:
             result = subprocess.run(
-                ['kaggle', '--version'],
+                ["kaggle", "--version"],
                 capture_output=True,
                 text=True,
-                check=False
+                env=os.environ.copy()
             )
+            
             if result.returncode == 0:
-                logger.info(f"Kaggle CLI version: {result.stdout.strip()}")
+                logger.info(f"Kaggle CLI available: {result.stdout.strip()}")
                 return True
             else:
+                logger.error(f"Kaggle CLI error: {result.stderr}")
                 return False
+                
         except FileNotFoundError:
+            logger.error("Kaggle CLI not found. Install with: pip install kaggle")
+            return False
+        except Exception as e:
+            logger.error(f"Error checking Kaggle CLI: {str(e)}")
             return False
     
-    def download_dataset(
-        self,
-        dataset_slug: str,
-        force_download: bool = False
-    ) -> Optional[Path]:
+    def download_dataset_cli(
+        self, 
+        dataset_slug: str, 
+        download_path: Optional[Path] = None
+    ) -> Tuple[bool, str]:
         """
-        Download a Kaggle dataset
+        Download a Kaggle dataset using CLI (subprocess method).
         
         Args:
-            dataset_slug: Dataset identifier (e.g., 'username/dataset-name')
-            force_download: Re-download even if exists
+            dataset_slug: Kaggle dataset identifier (e.g., 'username/dataset-name')
+            download_path: Optional custom download path
             
         Returns:
-            Path to downloaded file or None if failed
+            Tuple[bool, str]: (Success status, Message or error)
         """
-        logger.info(f"Downloading dataset: {dataset_slug}")
-        
-        if not self._check_kaggle_cli():
-            error_msg = (
-                "Kaggle CLI not found. Install with: pip install kaggle"
-            )
-            logger.error(error_msg)
-            raise FileProcessingError(error_msg, error_detail=sys.exc_info())
-        
-        dataset_name = dataset_slug.split('/')[-1]
-        zip_file = self.output_dir / f"{dataset_name}.zip"
-        
-        if zip_file.exists() and not force_download:
-            logger.info(f"Dataset already exists: {zip_file}")
-            return zip_file
-        
         try:
+            download_path = download_path or self.data_dir
+            download_path.mkdir(parents=True, exist_ok=True)
+            
+            logger.info(f"Downloading dataset via CLI: {dataset_slug}")
+            
+            # Prepare environment with credentials
+            env = os.environ.copy()
+            env["KAGGLE_USERNAME"] = self.username
+            env["KAGGLE_KEY"] = self.api_key
+            
+            # Run kaggle download command
             cmd = [
-                'kaggle', 'datasets', 'download',
-                '-d', dataset_slug,
-                '-p', str(self.output_dir),
-                '--force' if force_download else '--quiet'
+                "kaggle", 
+                "datasets", 
+                "download", 
+                "-d", dataset_slug, 
+                "-p", str(download_path),
+                "--unzip"  # Auto-unzip after download
             ]
             
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                check=True
+                env=env
             )
             
-            logger.info(f"Download completed: {dataset_slug}")
-            logger.debug(f"Output: {result.stdout}")
-            
-            return zip_file
-            
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Download failed: {e.stderr}")
-            raise FileProcessingError(f"Kaggle download failed: {e.stderr}", error_detail=sys.exc_info())
+            if result.returncode == 0:
+                logger.info(f"Successfully downloaded: {dataset_slug}")
+                return True, f"Downloaded {dataset_slug}"
+            else:
+                error_msg = result.stderr.strip() or result.stdout.strip()
+                logger.error(f"Download failed: {error_msg}")
+                return False, f"Download failed: {error_msg}"
+                
+        except FileNotFoundError:
+            error_msg = "Kaggle CLI not found. Install with: pip install kaggle"
+            logger.error(error_msg)
+            return False, error_msg
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Download error: {error_msg}")
+            return False, f"Download error: {error_msg}"
     
-    def extract_dataset(
-        self,
-        zip_file: Path,
-        extract_to: Optional[Path] = None,
-        remove_zip: bool = True
-    ) -> List[Path]:
+    def download_dataset_api(
+        self, 
+        dataset_slug: str, 
+        download_path: Optional[Path] = None
+    ) -> Tuple[bool, str]:
         """
-        Extract downloaded zip file
+        Download a Kaggle dataset using Python API (fallback method).
         
         Args:
-            zip_file: Path to zip file
-            extract_to: Extraction directory (default: same as zip)
-            remove_zip: Delete zip after extraction
+            dataset_slug: Kaggle dataset identifier
+            download_path: Optional custom download path
             
         Returns:
-            List of extracted file paths
+            Tuple[bool, str]: (Success status, Message or error)
         """
-        if not zip_file.exists():
-            raise FileProcessingError(f"Zip file not found: {zip_file}", error_detail=sys.exc_info())
-        
-        if extract_to is None:
-            extract_to = zip_file.parent
-        
-        extract_to.mkdir(parents=True, exist_ok=True)
-        
-        logger.info(f"Extracting: {zip_file.name}")
-        
         try:
-            with zipfile.ZipFile(zip_file, 'r') as zip_ref:
-                zip_ref.extractall(extract_to)
-                extracted_files = [
-                    extract_to / name for name in zip_ref.namelist()
-                ]
+            from kaggle.api.kaggle_api_extended import KaggleApi
             
-            logger.info(f"Extracted {len(extracted_files)} files to {extract_to}")
+            download_path = download_path or self.data_dir
+            download_path.mkdir(parents=True, exist_ok=True)
             
-            if remove_zip:
-                zip_file.unlink()
-                logger.info(f"Removed zip file: {zip_file.name}")
+            logger.info(f"Downloading dataset via API: {dataset_slug}")
             
-            return extracted_files
+            # Initialize and authenticate API
+            api = KaggleApi()
+            api.authenticate()
             
-        except zipfile.BadZipFile as e:
-            logger.error(f"Invalid zip file: {e}")
-            raise FileProcessingError(f"Zip extraction failed: {e}", error_detail=sys.exc_info())
+            # Download and unzip
+            api.dataset_download_files(
+                dataset_slug,
+                path=str(download_path),
+                unzip=True,
+                quiet=False
+            )
+            
+            logger.info(f"Successfully downloaded: {dataset_slug}")
+            return True, f"Downloaded {dataset_slug}"
+            
+        except ImportError:
+            error_msg = "Kaggle package not installed. Run: pip install kaggle"
+            logger.error(error_msg)
+            return False, error_msg
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"API download error: {error_msg}")
+            return False, f"API error: {error_msg}"
     
-    def download_and_extract(
-        self,
-        dataset_slug: str,
-        force_download: bool = False,
-        remove_zip: bool = True
-    ) -> List[Path]:
+    def download_dataset(
+        self, 
+        dataset_slug: str, 
+        download_path: Optional[Path] = None
+    ) -> Tuple[bool, str]:
         """
-        Download and extract in one step
+        Download a Kaggle dataset using best available method.
+        Tries CLI first, then falls back to Python API.
         
         Args:
-            dataset_slug: Dataset identifier
-            force_download: Re-download even if exists
-            remove_zip: Delete zip after extraction
+            dataset_slug: Kaggle dataset identifier
+            download_path: Optional custom download path
             
         Returns:
-            List of extracted file paths
+            Tuple[bool, str]: (Success status, Message or error)
         """
-        zip_file = self.download_dataset(dataset_slug, force_download)
+        # Try CLI method first (more reliable)
+        if self._check_kaggle_cli():
+            success, message = self.download_dataset_cli(dataset_slug, download_path)
+            if success:
+                return True, message
+            else:
+                logger.warning(f"CLI download failed, trying API method...")
         
-        if zip_file:
-            return self.extract_dataset(zip_file, remove_zip=remove_zip)
-        
-        return []
+        # Fallback to API method
+        return self.download_dataset_api(dataset_slug, download_path)
     
-    def download_resume_datasets(
-        self,
-        force_download: bool = False
-    ) -> Tuple[List[Path], List[Path]]:
+    def download_resume_datasets(self) -> Tuple[bool, str]:
         """
-        Download both required datasets for Phase 3
+        Download both resume and JD datasets for Phase 3.
         
-        Args:
-            force_download: Re-download even if exists
+        Returns:
+            Tuple[bool, str]: Success status and message
+        """
+        try:
+            self._verify_credentials()
             
-        Returns:
-            Tuple of (resume_files, jd_files)
-        """
-        logger.info("Downloading required datasets for Phase 3...")
-        
-        resume_dataset = 'gauravduttakiit/resume-dataset'
-        jd_dataset = 'ravindrasinghrana/job-description-dataset'
-        
-        resume_files = self.download_and_extract(
-            resume_dataset,
-            force_download=force_download
-        )
-        
-        jd_files = self.download_and_extract(
-            jd_dataset,
-            force_download=force_download
-        )
-        
-        logger.info(f"Resume dataset: {len(resume_files)} files")
-        logger.info(f"JD dataset: {len(jd_files)} files")
-        
-        return resume_files, jd_files
+            logger.info("Downloading required datasets for Phase 3...")
+            
+            # # Dataset 1: Resume Dataset
+            # resume_dataset = "gauravduttakiit/resume-dataset"
+            # logger.info(f"[1/2] Downloading resume dataset...")
+            
+            # success1, msg1 = self.download_dataset(resume_dataset, self.data_dir)
+            
+            # if not success1:
+            #     logger.error(f"Resume dataset failed: {msg1}")
+            #     return False, f"Resume dataset download failed: {msg1}"
+            
+            # Dataset 2: JD Dataset
+            jd_dataset = "ravindrasinghrana/job-description-dataset"
+            logger.info(f"[2/2] Downloading JD dataset...")
+            
+            success2, msg2 = self.download_dataset(jd_dataset, self.data_dir)
+            
+            if not success2:
+                logger.error(f"JD dataset failed: {msg2}")
+                return False, f"JD dataset download failed: {msg2}"
+            
+            logger.info("All datasets downloaded and extracted successfully")
+            return True, "Both datasets downloaded successfully"
+            
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Download failed: {error_msg}")
+            return False, f"Download failed: {error_msg}"
     
-    def verify_datasets(self) -> bool:
+    def verify_datasets(self) -> Tuple[bool, int]:
         """
-        Verify required datasets exist
+        Verify that datasets have been downloaded.
         
         Returns:
-            True if all datasets found
+            Tuple[bool, int]: (All datasets present, Number of CSV files found)
         """
-        csv_files = list(self.output_dir.glob('*.csv'))
+        csv_files = list(self.data_dir.glob("*.csv"))
+        num_files = len(csv_files)
         
-        if len(csv_files) < 2:
-            logger.warning(f"Found only {len(csv_files)} CSV files, expected 2+")
-            return False
+        if num_files < 2:
+            logger.warning(f"Found only {num_files} CSV files, expected 2+")
+            return False, num_files
         
-        logger.info(f"Found {len(csv_files)} dataset files")
+        logger.info(f"Found {num_files} dataset files")
         for csv_file in csv_files:
             logger.info(f"  - {csv_file.name}")
         
-        return True
+        return True, num_files
 
 
-def main():
-    """Download datasets for Phase 3"""
-    from dotenv import load_dotenv
+def download_kaggle_datasets() -> bool:
+    """
+    Convenience function to download all required datasets.
     
-    load_dotenv()
-    
-    downloader = KaggleDownloader()
-    
+    Returns:
+        bool: True if successful
+    """
     try:
-        resume_files, jd_files = downloader.download_resume_datasets()
+        downloader = KaggleDownloader()
+        success, message = downloader.download_resume_datasets()
         
-        print("\nDownload Summary:")
-        print(f"Resume files: {len(resume_files)}")
-        print(f"JD files: {len(jd_files)}")
-        
-        if downloader.verify_datasets():
-            print("\nAll datasets downloaded successfully!")
+        if success:
+            logger.info(message)
+            return True
         else:
-            print("\nWarning: Some datasets may be missing")
+            logger.error(message)
+            return False
             
     except Exception as e:
-        print(f"\nError: {e}")
-        print("\nPlease ensure:")
-        print("1. Kaggle credentials are set in .env file")
-        print("2. Kaggle CLI is installed: pip install kaggle")
-        print("3. You have internet connection")
-
-
-if __name__ == "__main__":
-    main()
+        logger.error(f"Failed to download datasets: {str(e)}")
+        return False

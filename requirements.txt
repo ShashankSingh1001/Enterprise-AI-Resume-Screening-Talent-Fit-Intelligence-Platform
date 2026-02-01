@@ -95,3 +95,5 @@ lxml==5.1.0
 
 # Progress Bars
 rich==13.7.0
+
+kaggle==1.6.17
