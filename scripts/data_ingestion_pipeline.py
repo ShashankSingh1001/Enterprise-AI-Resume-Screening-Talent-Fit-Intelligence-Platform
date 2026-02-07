@@ -45,15 +45,26 @@ def main():
     logger.info("\n[2/7] Checking for Kaggle datasets...")
     downloader = KaggleDownloader()
     
-    if not downloader.verify_datasets():
+    datasets_exist, num_files = downloader.verify_datasets()
+    
+    if not datasets_exist:
         logger.info("Datasets not found. Downloading from Kaggle...")
         try:
-            resume_files, jd_files = downloader.download_resume_datasets()
-            logger.info("Kaggle datasets downloaded successfully")
+            success, message = downloader.download_resume_datasets()
+            if success:
+                logger.info("Kaggle datasets downloaded successfully")
+            else:
+                logger.error(f"Download failed: {message}")
+                logger.info("\nManual download instructions:")
+                logger.info("1. Resume Dataset: https://www.kaggle.com/datasets/gauravduttakiit/resume-dataset")
+                logger.info("2. JD Dataset: https://www.kaggle.com/datasets/ravindrasinghrana/job-description-dataset")
+                logger.info("3. Place CSV files in: data/external/")
+                logger.info("\nOr set KAGGLE_USERNAME and KAGGLE_KEY in .env file")
+                return
         except Exception as e:
-            logger.error(f"Failed to download datasets: {e}")
+            logger.error(f"Failed to download datasets: {str(e)}")
             logger.info("\nManual download instructions:")
-            logger.info("1. Resume Dataset: https://www.kaggle.com/datasets/snehaanbhawal/resume-dataset")
+            logger.info("1. Resume Dataset: https://www.kaggle.com/datasets/gauravduttakiit/resume-dataset")
             logger.info("2. JD Dataset: https://www.kaggle.com/datasets/ravindrasinghrana/job-description-dataset")
             logger.info("3. Place CSV files in: data/external/")
             logger.info("\nOr set KAGGLE_USERNAME and KAGGLE_KEY in .env file")
