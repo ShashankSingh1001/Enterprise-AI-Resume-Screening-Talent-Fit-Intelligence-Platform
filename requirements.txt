@@ -95,3 +95,6 @@ lxml==5.1.0
 
 # Progress Bars
 rich==13.7.0
+
+flashtext>=2.7
+

@@ -11,8 +11,8 @@ import json
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np
-import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
 from src.logging import get_logger
@@ -20,195 +20,163 @@ from src.exceptions import ModelPredictionError, FileProcessingError
 
 logger = get_logger(__name__)
 
-# Supported model file extensions
-SUPPORTED_MODEL_FORMATS = ['.pkl', '.pickle', '.joblib', '.json']
+SUPPORTED_MODEL_FORMATS = {".pkl", ".pickle", ".joblib", ".json"}
 
+
+# =====================================================
+# MODEL SAVE / LOAD
+# =====================================================
 
 def save_model(
-    model: Any, 
+    model: Any,
     model_path: str,
     metadata: Optional[Dict[str, Any]] = None,
     create_dir: bool = True
 ) -> bool:
     """
-    Save model to file with optional metadata.
-    
-    Args:
-        model: Model object to save
-        model_path: Path to save the model
-        metadata: Optional metadata dictionary
-        create_dir: Create directory if it doesn't exist
-        
-    Returns:
-        True if successful
-        
-    Raises:
-        FileProcessingError: If save operation fails
+    Save model to disk with optional metadata.
     """
     try:
-        logger.info(f"Saving model to: {model_path}")
-        
-        # Create directory if needed
+        model_path = Path(model_path)
+
         if create_dir:
-            model_dir = os.path.dirname(model_path)
-            if model_dir:
-                Path(model_dir).mkdir(parents=True, exist_ok=True)
-                logger.debug(f"Created directory: {model_dir}")
-        
-        # Determine file format
-        file_ext = os.path.splitext(model_path)[1].lower()
-        
-        if file_ext not in SUPPORTED_MODEL_FORMATS:
+            model_path.parent.mkdir(parents=True, exist_ok=True)
+
+        ext = model_path.suffix.lower()
+        if ext not in SUPPORTED_MODEL_FORMATS:
             raise FileProcessingError(
-                Exception(
-                    f"Unsupported model format: {file_ext}. "
-                    f"Supported: {SUPPORTED_MODEL_FORMATS}"
-                ),
-                sys
+                message=f"Unsupported model format: {ext}",
+                error_detail=None
             )
-        
-        # Save model based on format
-        if file_ext in ['.pkl', '.pickle']:
-            with open(model_path, 'wb') as f:
+
+        logger.info(f"Saving model to {model_path}")
+
+        if ext in {".pkl", ".pickle"}:
+            with open(model_path, "wb") as f:
                 pickle.dump(model, f)
-        elif file_ext == '.joblib':
+
+        elif ext == ".joblib":
             joblib.dump(model, model_path)
-        elif file_ext == '.json':
-            with open(model_path, 'w') as f:
+
+        elif ext == ".json":
+            with open(model_path, "w", encoding="utf-8") as f:
                 json.dump(model, f, indent=2)
-        
-        logger.info(f"Model saved successfully: {model_path}")
-        
-        # Save metadata if provided
+
         if metadata is not None:
-            metadata_path = model_path.replace(file_ext, '_metadata.json')
-            metadata['saved_at'] = datetime.now().isoformat()
-            metadata['model_path'] = model_path
-            metadata['file_size_mb'] = os.path.getsize(model_path) / (1024 * 1024)
-            
-            with open(metadata_path, 'w') as f:
+            metadata_path = model_path.with_name(
+                model_path.stem + "_metadata.json"
+            )
+
+            metadata.update({
+                "saved_at": datetime.utcnow().isoformat(),
+                "model_path": str(model_path),
+                "file_size_mb": round(model_path.stat().st_size / (1024 * 1024), 2)
+            })
+
+            with open(metadata_path, "w", encoding="utf-8") as f:
                 json.dump(metadata, f, indent=2)
-            
-            logger.info(f"Model metadata saved: {metadata_path}")
-        
+
+            logger.info(f"Metadata saved: {metadata_path}")
+
         return True
-    
+
     except FileProcessingError:
         raise
     except Exception as e:
-        logger.error(f"Failed to save model: {str(e)}")
-        raise FileProcessingError(e, sys)
+        logger.error(f"Model save failed: {e}")
+        raise FileProcessingError(
+            message="Failed to save model",
+            error_detail=sys.exc_info()
+        )
 
 
 def load_model(model_path: str) -> Any:
     """
-    Load model from file.
-    Supports .pkl, .pickle, .joblib, .json formats.
-    
-    Args:
-        model_path: Path to the model file
-        
-    Returns:
-        Loaded model object
-        
-    Raises:
-        FileProcessingError: If load operation fails
+    Load model from disk.
     """
     try:
-        logger.info(f"Loading model from: {model_path}")
-        
-        # Check if file exists
-        if not os.path.exists(model_path):
+        model_path = Path(model_path)
+
+        if not model_path.exists():
             raise FileProcessingError(
-                Exception(f"Model file not found: {model_path}"),
-                sys
+                message=f"Model file not found: {model_path}",
+                error_detail=None
             )
-        
-        # Determine file format
-        file_ext = os.path.splitext(model_path)[1].lower()
-        
-        if file_ext not in SUPPORTED_MODEL_FORMATS:
+
+        ext = model_path.suffix.lower()
+        if ext not in SUPPORTED_MODEL_FORMATS:
             raise FileProcessingError(
-                Exception(
-                    f"Unsupported model format: {file_ext}. "
-                    f"Supported: {SUPPORTED_MODEL_FORMATS}"
-                ),
-                sys
+                message=f"Unsupported model format: {ext}",
+                error_detail=None
             )
-        
-        # Load model based on format
-        if file_ext in ['.pkl', '.pickle']:
-            with open(model_path, 'rb') as f:
-                model = pickle.load(f)
-        elif file_ext == '.joblib':
-            model = joblib.load(model_path)
-        elif file_ext == '.json':
-            with open(model_path, 'r') as f:
-                model = json.load(f)
-        
-        logger.info(f"Model loaded successfully: {type(model).__name__}")
-        return model
-    
+
+        logger.info(f"Loading model from {model_path}")
+
+        if ext in {".pkl", ".pickle"}:
+            with open(model_path, "rb") as f:
+                return pickle.load(f)
+
+        if ext == ".joblib":
+            return joblib.load(model_path)
+
+        if ext == ".json":
+            with open(model_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+
     except FileProcessingError:
         raise
     except Exception as e:
-        logger.error(f"Failed to load model: {str(e)}")
-        raise FileProcessingError(e, sys)
+        logger.error(f"Model load failed: {e}")
+        raise FileProcessingError(
+            message="Failed to load model",
+            error_detail=sys.exc_info()
+        )
 
 
 def get_model_metadata(model_path: str) -> Dict[str, Any]:
     """
-    Extract model metadata including file info.
-    
-    Args:
-        model_path: Path to the model file
-        
-    Returns:
-        Dictionary containing model metadata
-        
-    Raises:
-        FileProcessingError: If metadata extraction fails
+    Retrieve model metadata.
     """
     try:
-        logger.debug(f"Extracting metadata for: {model_path}")
-        
-        if not os.path.exists(model_path):
+        model_path = Path(model_path)
+
+        if not model_path.exists():
             raise FileProcessingError(
-                Exception(f"Model file not found: {model_path}"),
-                sys
+                message=f"Model file not found: {model_path}",
+                error_detail=None
             )
-        
-        # Basic file metadata
-        stat_info = os.stat(model_path)
-        file_ext = os.path.splitext(model_path)[1]
-        
+
+        stat = model_path.stat()
+
         metadata = {
-            'model_path': model_path,
-            'filename': os.path.basename(model_path),
-            'file_format': file_ext,
-            'size_bytes': stat_info.st_size,
-            'size_mb': round(stat_info.st_size / (1024 * 1024), 2),
-            'created_at': datetime.fromtimestamp(stat_info.st_ctime).isoformat(),
-            'modified_at': datetime.fromtimestamp(stat_info.st_mtime).isoformat(),
+            "filename": model_path.name,
+            "path": str(model_path),
+            "format": model_path.suffix,
+            "size_mb": round(stat.st_size / (1024 * 1024), 2),
+            "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+            "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
         }
-        
-        # Try to load saved metadata file
-        metadata_path = model_path.replace(file_ext, '_metadata.json')
-        if os.path.exists(metadata_path):
-            with open(metadata_path, 'r') as f:
-                saved_metadata = json.load(f)
-                metadata.update(saved_metadata)
-            logger.debug("Loaded saved metadata file")
-        
-        logger.info(f"Metadata extracted: {metadata['size_mb']}MB")
+
+        meta_file = model_path.with_name(model_path.stem + "_metadata.json")
+        if meta_file.exists():
+            with open(meta_file, "r", encoding="utf-8") as f:
+                metadata.update(json.load(f))
+
         return metadata
-    
+
     except FileProcessingError:
         raise
     except Exception as e:
-        logger.error(f"Failed to get model metadata: {str(e)}")
-        raise FileProcessingError(e, sys)
+        logger.error(f"Metadata extraction failed: {e}")
+        raise FileProcessingError(
+            message="Failed to extract model metadata",
+            error_detail=sys.exc_info()
+        )
 
+
+# =====================================================
+# VALIDATION & PREPROCESSING
+# =====================================================
 
 def validate_model_input(
     X: np.ndarray,
@@ -217,72 +185,51 @@ def validate_model_input(
     check_inf: bool = True
 ) -> bool:
     """
-    Validate model input data.
-    
-    Args:
-        X: Input features array
-        expected_features: Expected number of features
-        check_nan: Check for NaN values
-        check_inf: Check for infinite values
-        
-    Returns:
-        True if valid
-        
-    Raises:
-        ModelPredictionError: If validation fails
+    Validate model input array.
     """
     try:
-        logger.debug(f"Validating model input: shape={X.shape}")
-        
-        # Check if numpy array
         if not isinstance(X, np.ndarray):
             raise ModelPredictionError(
-                Exception(f"Input must be numpy array, got: {type(X).__name__}"),
-                sys
+                message="Input must be a numpy array",
+                error_detail=None
             )
-        
-        # Check dimensions
-        if X.ndim not in [1, 2]:
+
+        if X.ndim not in (1, 2):
             raise ModelPredictionError(
-                Exception(f"Input must be 1D or 2D array, got: {X.ndim}D"),
-                sys
+                message=f"Invalid array dimensions: {X.ndim}",
+                error_detail=None
             )
-        
-        # Check expected features
+
         if expected_features is not None:
-            n_features = X.shape[1] if X.ndim == 2 else X.shape[0]
+            n_features = X.shape[-1]
             if n_features != expected_features:
                 raise ModelPredictionError(
-                    Exception(
-                        f"Expected {expected_features} features, got {n_features}"
-                    ),
-                    sys
+                    message=f"Expected {expected_features} features, got {n_features}",
+                    error_detail=None
                 )
-        
-        # Check for NaN values
+
         if check_nan and np.isnan(X).any():
-            nan_count = np.isnan(X).sum()
             raise ModelPredictionError(
-                Exception(f"Input contains {nan_count} NaN values"),
-                sys
+                message="Input contains NaN values",
+                error_detail=None
             )
-        
-        # Check for infinite values
+
         if check_inf and np.isinf(X).any():
-            inf_count = np.isinf(X).sum()
             raise ModelPredictionError(
-                Exception(f"Input contains {inf_count} infinite values"),
-                sys
+                message="Input contains infinite values",
+                error_detail=None
             )
-        
-        logger.debug("Model input validation successful")
+
         return True
-    
+
     except ModelPredictionError:
         raise
     except Exception as e:
-        logger.error(f"Input validation failed: {str(e)}")
-        raise ModelPredictionError(e, sys)
+        logger.error(f"Input validation failed: {e}")
+        raise ModelPredictionError(
+            message="Model input validation failed",
+            error_detail=sys.exc_info()
+        )
 
 
 def preprocess_features(
@@ -292,53 +239,67 @@ def preprocess_features(
     fill_missing: bool = True
 ) -> np.ndarray:
     """
-    Convert feature dictionary to numpy array for model input.
-    
-    Args:
-        features: Dictionary of feature values
-        feature_names: Ordered list of feature names
-        scaler: Optional StandardScaler for normalization
-        fill_missing: Fill missing values with 0
-        
-    Returns:
-        Numpy array ready for model prediction
-        
-    Raises:
-        ModelPredictionError: If preprocessing fails
+    Convert feature dictionary to numpy array.
     """
     try:
-        logger.debug(f"Preprocessing {len(features)} features")
-        
-        # Extract values in correct order
         values = []
+
         for name in feature_names:
             if name in features:
                 values.append(features[name])
             elif fill_missing:
-                logger.warning(f"Missing feature '{name}', filling with 0")
                 values.append(0)
             else:
                 raise ModelPredictionError(
-                    Exception(f"Required feature missing: {name}"),
-                    sys
+                    message=f"Missing required feature: {name}",
+                    error_detail=None
                 )
-        
-        # Convert to numpy array
-        X = np.array(values).reshape(1, -1)
-        
-        # Apply scaling if provided
+
+        X = np.array(values, dtype=float).reshape(1, -1)
+
         if scaler is not None:
             X = scaler.transform(X)
-            logger.debug("Features scaled")
-        
-        logger.info(f"Features preprocessed: shape={X.shape}")
+
         return X
-    
+
     except ModelPredictionError:
         raise
     except Exception as e:
-        logger.error(f"Feature preprocessing failed: {str(e)}")
-        raise ModelPredictionError(e, sys)
+        logger.error(f"Feature preprocessing failed: {e}")
+        raise ModelPredictionError(
+            message="Feature preprocessing failed",
+            error_detail=sys.exc_info()
+        )
+
+
+# =====================================================
+# PREDICTION & ANALYSIS
+# =====================================================
+
+def predict_with_validation(
+    model: Any,
+    X: np.ndarray,
+    return_proba: bool = False
+) -> np.ndarray:
+    """
+    Predict with validation.
+    """
+    try:
+        validate_model_input(X)
+
+        if return_proba and hasattr(model, "predict_proba"):
+            return model.predict_proba(X)
+
+        return model.predict(X)
+
+    except ModelPredictionError:
+        raise
+    except Exception as e:
+        logger.error(f"Prediction failed: {e}")
+        raise ModelPredictionError(
+            message="Model prediction failed",
+            error_detail=sys.exc_info()
+        )
 
 
 def calculate_feature_importance(
@@ -347,196 +308,88 @@ def calculate_feature_importance(
     top_n: Optional[int] = None
 ) -> List[Tuple[str, float]]:
     """
-    Extract and rank feature importance from model.
-    
-    Args:
-        model: Trained model with feature_importances_ attribute
-        feature_names: List of feature names
-        top_n: Return only top N features (None = all)
-        
-    Returns:
-        List of (feature_name, importance) tuples, sorted by importance
+    Extract feature importance.
     """
-    try:
-        logger.debug("Calculating feature importance")
-        
-        # Check if model has feature importance
-        if not hasattr(model, 'feature_importances_'):
-            logger.warning(f"Model {type(model).__name__} doesn't have feature_importances_")
-            return []
-        
-        importances = model.feature_importances_
-        
-        # Create (name, importance) pairs
-        feature_importance = list(zip(feature_names, importances))
-        
-        # Sort by importance (descending)
-        feature_importance.sort(key=lambda x: x[1], reverse=True)
-        
-        # Return top N if specified
-        if top_n is not None:
-            feature_importance = feature_importance[:top_n]
-        
-        logger.info(f"Feature importance calculated for {len(feature_importance)} features")
-        return feature_importance
-    
-    except Exception as e:
-        logger.error(f"Feature importance calculation failed: {str(e)}")
+    if not hasattr(model, "feature_importances_"):
         return []
 
+    importance = list(zip(feature_names, model.feature_importances_))
+    importance.sort(key=lambda x: x[1], reverse=True)
 
-def predict_with_validation(
-    model: Any,
-    X: np.ndarray,
-    return_proba: bool = False
-) -> np.ndarray:
-    """
-    Make predictions with input validation.
-    
-    Args:
-        model: Trained model
-        X: Input features
-        return_proba: Return probabilities instead of class predictions
-        
-    Returns:
-        Predictions or probabilities
-        
-    Raises:
-        ModelPredictionError: If prediction fails
-    """
-    try:
-        logger.debug(f"Making prediction: shape={X.shape}")
-        
-        # Validate input
-        validate_model_input(X)
-        
-        # Make prediction
-        if return_proba and hasattr(model, 'predict_proba'):
-            predictions = model.predict_proba(X)
-            logger.debug("Returned class probabilities")
-        else:
-            predictions = model.predict(X)
-            logger.debug("Returned class predictions")
-        
-        logger.info(f"Prediction successful: {predictions.shape}")
-        return predictions
-    
-    except ModelPredictionError:
-        raise
-    except Exception as e:
-        logger.error(f"Prediction failed: {str(e)}")
-        raise ModelPredictionError(e, sys)
+    return importance[:top_n] if top_n else importance
 
 
 def handle_missing_values(
     X: np.ndarray,
-    strategy: str = 'mean'
+    strategy: str = "mean"
 ) -> np.ndarray:
     """
-    Handle missing values in feature array.
-    
-    Args:
-        X: Input array with potential missing values
-        strategy: Strategy for filling ('mean', 'median', 'zero')
-        
-    Returns:
-        Array with missing values filled
+    Fill missing values.
     """
     try:
         if not np.isnan(X).any():
-            logger.debug("No missing values found")
             return X
-        
-        nan_count = np.isnan(X).sum()
-        logger.info(f"Handling {nan_count} missing values using '{strategy}' strategy")
-        
-        X_filled = X.copy()
-        
-        if strategy == 'mean':
-            col_means = np.nanmean(X, axis=0)
-            nan_indices = np.where(np.isnan(X))
-            X_filled[nan_indices] = np.take(col_means, nan_indices[1])
-        
-        elif strategy == 'median':
-            col_medians = np.nanmedian(X, axis=0)
-            nan_indices = np.where(np.isnan(X))
-            X_filled[nan_indices] = np.take(col_medians, nan_indices[1])
-        
-        elif strategy == 'zero':
-            X_filled = np.nan_to_num(X, nan=0.0)
-        
+
+        X = X.copy()
+
+        if strategy == "mean":
+            means = np.nanmean(X, axis=0)
+            inds = np.where(np.isnan(X))
+            X[inds] = np.take(means, inds[1])
+
+        elif strategy == "median":
+            medians = np.nanmedian(X, axis=0)
+            inds = np.where(np.isnan(X))
+            X[inds] = np.take(medians, inds[1])
+
+        elif strategy == "zero":
+            X = np.nan_to_num(X)
+
         else:
             raise ValueError(f"Unknown strategy: {strategy}")
-        
-        logger.debug("Missing values handled successfully")
-        return X_filled
-    
-    except Exception as e:
-        logger.error(f"Failed to handle missing values: {str(e)}")
-        raise ModelPredictionError(e, sys)
 
+        return X
+
+    except Exception as e:
+        logger.error(f"Missing value handling failed: {e}")
+        raise ModelPredictionError(
+            message="Failed to handle missing values",
+            error_detail=sys.exc_info()
+        )
+
+
+# =====================================================
+# HELPERS
+# =====================================================
 
 def create_feature_dict(
     feature_names: List[str],
     values: List[Any]
 ) -> Dict[str, Any]:
-    """
-    Create feature dictionary from names and values.
-    
-    Args:
-        feature_names: List of feature names
-        values: List of feature values
-        
-    Returns:
-        Dictionary mapping feature names to values
-    """
-    try:
-        if len(feature_names) != len(values):
-            raise ValueError(
-                f"Length mismatch: {len(feature_names)} names vs {len(values)} values"
-            )
-        
-        feature_dict = dict(zip(feature_names, values))
-        logger.debug(f"Created feature dictionary with {len(feature_dict)} features")
-        return feature_dict
-    
-    except Exception as e:
-        logger.error(f"Failed to create feature dictionary: {str(e)}")
+    if len(feature_names) != len(values):
         return {}
+    return dict(zip(feature_names, values))
 
 
 def get_model_info(model: Any) -> Dict[str, Any]:
     """
-    Extract information about a model object.
-    
-    Args:
-        model: Model object
-        
-    Returns:
-        Dictionary with model information
+    Extract model metadata safely.
     """
-    try:
-        info = {
-            'model_type': type(model).__name__,
-            'module': type(model).__module__,
-        }
-        
-        # Add model-specific attributes
-        if hasattr(model, 'get_params'):
-            info['params'] = model.get_params()
-        
-        if hasattr(model, 'n_features_in_'):
-            info['n_features'] = model.n_features_in_
-        
-        if hasattr(model, 'classes_'):
-            info['classes'] = model.classes_.tolist()
-        
-        if hasattr(model, 'feature_importances_'):
-            info['has_feature_importance'] = True
-        
-        logger.debug(f"Model info extracted: {info['model_type']}")
-        return info
-    
-    except Exception as e:
-        logger.error(f"Failed to get model info: {str(e)}")
-        return {'model_type': 'unknown'}
+    info = {
+        "model_type": type(model).__name__,
+        "module": type(model).__module__,
+    }
+
+    if hasattr(model, "n_features_in_"):
+        info["n_features"] = model.n_features_in_
+
+    if hasattr(model, "classes_"):
+        info["classes"] = list(model.classes_)
+
+    if hasattr(model, "feature_importances_"):
+        info["has_feature_importance"] = True
+
+    if hasattr(model, "get_params"):
+        info["params"] = model.get_params()
+
+    return info

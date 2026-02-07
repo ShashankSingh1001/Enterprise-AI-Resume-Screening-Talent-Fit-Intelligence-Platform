@@ -1,30 +1,28 @@
 """
 Exception Module
-Custom exception classes for Resume AI Platform
+Unified exception exports for Resume AI Platform
 """
 
 from .custom_exceptions import (
-    ResumeAIException,
-    FileProcessingError,
+    ResumeScreeningError,
     ResumeParsingError,
     JDParsingError,
-    ModelPredictionError,
-    BiasDetectionError,
-    MLflowTrackingError,
-    DatabaseConnectionError,
+    DataValidationError,
+    FeatureExtractionError,
+    ModelError,
     ValidationError,
-    get_detailed_error_message
+    FileProcessingError,
+    ModelPredictionError,
 )
 
 __all__ = [
-    'ResumeAIException',
-    'FileProcessingError',
-    'ResumeParsingError',
-    'JDParsingError',
-    'ModelPredictionError',
-    'BiasDetectionError',
-    'MLflowTrackingError',
-    'DatabaseConnectionError',
-    'ValidationError',
-    'get_detailed_error_message'
+    "ResumeScreeningError",
+    "ResumeParsingError",
+    "JDParsingError",
+    "DataValidationError",
+    "FeatureExtractionError",
+    "ModelError",
+    "ValidationError",
+    "FileProcessingError",
+    "ModelPredictionError",
 ]
