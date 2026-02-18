@@ -17,11 +17,11 @@ def get_db_connection():
     load_dotenv()
     
     db_config = {
-        'host': os.getenv('DATABASE_HOST', 'localhost'),
-        'port': os.getenv('DATABASE_PORT', '5432'),
-        'database': os.getenv('DATABASE_NAME', 'resume_ai'),
-        'user': os.getenv('DATABASE_USER', 'postgres'),
-        'password': os.getenv('DATABASE_PASSWORD', 'postgres')
+        'host': os.getenv('DB_HOST', 'localhost'),
+        'port': os.getenv('DB_PORT', '5432'),
+        'database': os.getenv('DB_NAME', 'resume_screening'),
+        'user': os.getenv('DB_USER', 'postgres'),
+        'password': os.getenv('DB_PASSWORD')
     }
     
     return db_config
